@@ -31,7 +31,7 @@ import "math"
 import "sort"
 import "crypto/md5"
 
-type uints []uint64
+type uints []uint32
 func (h uints) Len() int           { return len(h) }
 func (h uints) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 func (h uints) Less(i, j int) bool { return h[i] < h[j] }
@@ -52,13 +52,13 @@ type RingNode struct {
 
 type HashRing struct {
 	Table []RingNode
-	index map[uint64]int
+	index map[uint32]int
 	keys  uints
 }
 // This code is partially derived from https://github.com/serialx/hashring
 func (h *HashRing) GenerateCircle() {
 	var m5h [md5.Size]byte
-	h.index = make(map[uint64]int)
+	h.index = make(map[uint32]int)
 	h.keys = h.keys[:0]
 	totalWeight := 0
 	for _,v := range h.Table {
@@ -76,7 +76,7 @@ func (h *HashRing) GenerateCircle() {
 		k := crcMd5(0,m5h)
 		
 		for j:=0 ; j<factor ; j++ {
-			k2 := crcInt(k,j)
+			k2 := uint32(crcInt(k,j))
 			
 			h.index[k2] = i
 			h.keys = append(h.keys,k2)
@@ -94,22 +94,13 @@ func encodeLE(b []byte,d int) {
 }
 
 func (h *HashRing) GetNodePosition(b Binary) int {
-	m5h := b.Md5()
-	hkey := crcMd5(0,m5h)
-	hkey  = crcInt(hkey,0)
-	keys := h.keys
-	if len(keys)==0 { return -1 }
-	
-	position := sort.Search(len(keys), func(i int) bool { return keys[i] > hkey } )
-	
-	if position >= len(keys) { position = 0 }
-	return h.index[keys[position]]
+	return h.GetNodePositionIterative(b,0)
 }
 
 func (h *HashRing) GetNodePositionIterative(b Binary, iteration int) int {
 	m5h := b.Md5()
-	hkey := crcMd5(0,m5h)
-	hkey  = crcInt(hkey,iteration)
+	mcrc := crcMd5(0,m5h)
+	hkey := uint32(crcInt(mcrc,iteration))
 	keys := h.keys
 	if len(keys)==0 { return -1 }
 	
@@ -119,4 +110,25 @@ func (h *HashRing) GetNodePositionIterative(b Binary, iteration int) int {
 	return h.index[keys[position]]
 }
 
+func (h *HashRing) GetAllNodePositions(b Binary, out []int, begin int) bool {
+	m5h := b.Md5()
+	mcrc := crcMd5(0,m5h)
+	hkey := uint32(0)
+	keys := h.keys
+	if len(keys)==0 { return false }
+	
+	lk := len(keys)
+	find := func(i int) bool { return keys[i] > hkey }
+	
+	for i := range out {
+		hkey = uint32(crcInt(mcrc,begin))
+		begin++
+		
+		position := sort.Search(lk, find)
+		
+		if position >= len(keys) { position = 0 }
+		out[i] = h.index[keys[position]]
+	}
+	return true
+}
 
