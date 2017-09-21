@@ -24,24 +24,30 @@ SOFTWARE.
 
 package hashring
 
-import "hash"
-import "hash/fnv"
 import "hash/crc64"
-import "sync"
-
-var pool_Fnv = sync.Pool{ New : func() interface{} { return fnv.New64a() } }
-
-func Hash(b []byte) uint64 {
-	h := pool_Fnv.Get().(hash.Hash64)
-	defer pool_Fnv.Put(h)
-	h.Reset()
-	h.Write(b)
-	return h.Sum64()
-}
+import "crypto/md5"
 
 var crctable = crc64.MakeTable(crc64.ECMA)
 
-func Derive(base uint64,b []byte) uint64 {
-	return crc64.Update(base,crctable,b)
+func crcStep(crc uint64,b byte) uint64 {
+	crc = ^crc
+	crc = crctable[byte(crc)^b] ^ (crc >> 8)
+	return ^crc
+}
+
+func crcMd5(crc uint64,b [md5.Size]byte) uint64 {
+	crc = ^crc
+	for _,v := range b {
+		crc = crctable[byte(crc)^v] ^ (crc >> 8)
+	}
+	return ^crc
+}
+func crcInt(crc uint64,i int) uint64 {
+	crc = ^crc
+	crc = crctable[byte(crc)^byte(i    )] ^ (crc >> 8)
+	crc = crctable[byte(crc)^byte(i>> 8)] ^ (crc >> 8)
+	crc = crctable[byte(crc)^byte(i>>16)] ^ (crc >> 8)
+	crc = crctable[byte(crc)^byte(i>>24)] ^ (crc >> 8)
+	return ^crc
 }
 

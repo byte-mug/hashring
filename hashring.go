@@ -29,6 +29,7 @@ package hashring
 
 import "math"
 import "sort"
+import "crypto/md5"
 
 type uints []uint64
 func (h uints) Len() int           { return len(h) }
@@ -39,7 +40,7 @@ type Binary struct {
 	data []byte
 }
 func NewBinary(b []byte) Binary { return Binary{b} }
-func (b Binary) Hash() uint64 { return Hash(b.data) }
+func (b Binary) Md5() [md5.Size]byte { return md5.Sum(b.data) }
 func (b Binary) String() string { return string(b.data) }
 func (b Binary) ToBytes(prefix []byte) []byte { return append(prefix,b.data...) }
 
@@ -56,7 +57,7 @@ type HashRing struct {
 }
 // This code is partially derived from https://github.com/serialx/hashring
 func (h *HashRing) GenerateCircle() {
-	buf := make([]byte,4)
+	var m5h [md5.Size]byte
 	h.index = make(map[uint64]int)
 	h.keys = h.keys[:0]
 	totalWeight := 0
@@ -71,11 +72,11 @@ func (h *HashRing) GenerateCircle() {
 		if weigth<1 { weigth = 1 }
 		
 		factor := int(math.Floor(float64(40*len(h.Table)*weigth) / float64(totalWeight)))
-		k := v.Key.Hash()
+		m5h = v.Key.Md5()
+		k := crcMd5(0,m5h)
 		
 		for j:=0 ; j<factor ; j++ {
-			encodeLE(buf,j)
-			k2 := Derive(k,buf)
+			k2 := crcInt(k,j)
 			
 			h.index[k2] = i
 			h.keys = append(h.keys,k2)
@@ -93,7 +94,22 @@ func encodeLE(b []byte,d int) {
 }
 
 func (h *HashRing) GetNodePosition(b Binary) int {
-	hkey := Derive(b.Hash(),b.data)
+	m5h := b.Md5()
+	hkey := crcMd5(0,m5h)
+	hkey  = crcInt(hkey,0)
+	keys := h.keys
+	if len(keys)==0 { return -1 }
+	
+	position := sort.Search(len(keys), func(i int) bool { return keys[i] > hkey } )
+	
+	if position >= len(keys) { position = 0 }
+	return h.index[keys[position]]
+}
+
+func (h *HashRing) GetNodePositionIterative(b Binary, iteration int) int {
+	m5h := b.Md5()
+	hkey := crcMd5(0,m5h)
+	hkey  = crcInt(hkey,iteration)
 	keys := h.keys
 	if len(keys)==0 { return -1 }
 	
